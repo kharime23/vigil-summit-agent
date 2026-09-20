@@ -1,0 +1,398 @@
+{
+  "name": "Kha - TCC Vigil - WF2 Régua Pré",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "9d71f2d9-cabe-4433-8a2e-92b5bef7dc37",
+      "name": "Cron 5min (teste) / diário (produção)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "3a2af676-339e-4026-a0a2-6a896d0fb132",
+      "name": "Ler Leads (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Lógica da régua PRÉ com timing de teste comprimido.\n// Produção: trocar os offsets por D-7/D-3/D-1/D0 (ver constantes abaixo).\nconst AGORA = new Date();\nconst MIN = 60*1000, HORA = 60*MIN;\n\n// offsets de TESTE (comprimido p/ o avaliador ver tudo)\nconst OFF_E2 = 1*HORA;   // E2: 1h após inscrição\nconst OFF_STEP = 10*MIN; // E3,E4,E5: 10 min após a etapa anterior\n\nconst out = [];\nfor (const item of $input.all()) {\n  const l = item.json;\n  // pular quem saiu, quem já converteu/descartou, ou sem data\n  if (String(l.opt_out).toUpperCase() === \"TRUE\") continue;\n  const status = (l.status || \"\").toUpperCase();\n  if ([\"REUNIAO_AGENDADA\",\"DESCARTE\",\"PRESENTE\",\"NAO_COMPARECEU\"].includes(status)) continue;\n\n  const criado = l.created_at ? new Date(l.created_at) : null;\n  if (!criado) continue;\n  const ultima = (l.ultima_etapa_pre || \"\").toUpperCase();\n  const ultimaTs = l.ultima_etapa_pre_ts ? new Date(l.ultima_etapa_pre_ts) : criado;\n  const confirmado = String(l.confirmado).toUpperCase() === \"TRUE\";\n\n  let etapa = null;\n  if (ultima === \"\" || ultima === \"E1\") {\n    if (AGORA - criado >= OFF_E2) etapa = \"E2\";\n  } else if (ultima === \"E2\") {\n    if (AGORA - ultimaTs >= OFF_STEP) etapa = \"E3\";\n  } else if (ultima === \"E3\") {\n    if (AGORA - ultimaTs >= OFF_STEP) etapa = \"E4\";\n  } else if (ultima === \"E4\") {\n    if (AGORA - ultimaTs >= OFF_STEP) etapa = \"E5\";\n  }\n  if (!etapa) continue;\n\n  out.push({ json: { ...l, etapa, confirmado } });\n}\nreturn out;\n"
+      },
+      "id": "a2b9e6a5-890f-401e-bdbf-c700fd6dda7b",
+      "name": "Decidir etapa (timing)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "Você é o agente de relacionamento do Vigil Summit (evento B2B de cibersegurança da Vigil.AI). Gere a mensagem da régua PRÉ-evento para este lead, usando TODA a memória de perfil disponível.\n\nETAPA A GERAR: {{ $json.etapa }}\n\nPERFIL DO LEAD (memória construída no funil):\n- Nome: {{ $json.nome }}\n- Cargo informado: {{ $json.cargo_informado }} | Cargo real: {{ $json.cargo_real }}\n- Empresa: {{ $json.empresa }} | Setor: {{ $json.setor }} | Porte: {{ $json.porte }}\n- Sinais de interesse: {{ $json.sinais_interesse }}\n- Ângulo de personalização: {{ $json.angulo_personalizacao }}\n- Já confirmou presença?: {{ $json.confirmado }}\n\nDIRETRIZES POR ETAPA:\n- E2 (conteúdo de valor): conecte uma trilha do evento ao SETOR do lead. Se confirmado=false, reforce o pedido de confirmação.\n- E3 (prova social + logística): \"empresas de {{ $json.setor }} com porte parecido já confirmaram\"; informe local/horário. Se confirmado=true, tom de nutrição; se false, tom de reforço e leve urgência.\n- E4 (lembrete \"é amanhã\"): curto; se confirmado=true tom de \"te espero\", se false \"última chamada\".\n- E5 (é hoje): muito curto, para WhatsApp, com local e horário.\n\nREGRAS: Português brasileiro, tom profissional e consultivo, sem clichês genéricos. Use o nome e o contexto real. Nunca invente dados que não estão no perfil.\n\nResponda em JSON com: assunto (para e-mail), corpo_email (HTML simples, parágrafos <p>), corpo_whatsapp (texto curto, sem HTML).",
+        "hasOutputParser": true
+      },
+      "id": "64fb7ca0-6cb5-4539-87f7-4698ce48d86e",
+      "name": "Gerar mensagem (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-sonnet-4.6",
+        "options": {}
+      },
+      "id": "de79aad1-3332-4488-b344-5eb4b201f90c",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        860,
+        520
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "pRbx2i2kMURtBSCv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"assunto\": \"Ana, a trilha de LGPD em saúde no Vigil Summit\", \"corpo_email\": \"<p>Olá Ana,</p><p>...</p>\", \"corpo_whatsapp\": \"Oi Ana! ...\"}"
+      },
+      "id": "d25580a1-4591-4075-a3ef-35c373c20aa2",
+      "name": "Parser Saída",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Decidir etapa (timing)').item.json.email }}",
+        "subject": "={{ $json.output.assunto }}",
+        "message": "={{ $json.output.corpo_email }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "7f19bba2-9099-49d2-878c-33c893ce9411",
+      "name": "Enviar E-mail (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Mgal1FY2cv6nB5Ng",
+          "name": "Kha Gmail Pessoal"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Decidir etapa (timing)').item.json.optin_whatsapp }}",
+              "rightValue": "TRUE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ ['E4','E5'].includes($('Decidir etapa (timing)').item.json.etapa) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "f6aab1c2-cf32-4d53-b58a-cf0f5da59075",
+      "name": "É E4/E5 + opt-in WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "SEU_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Decidir etapa (timing)').item.json.whatsapp }}",
+        "textBody": "={{ $('Gerar mensagem (Claude)').item.json.output.corpo_whatsapp }}",
+        "additionalFields": {}
+      },
+      "id": "c08d7441-a865-4bcf-8bd7-17f1919dc07c",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1580,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "value": {
+            "lead_id": "={{ $('Decidir etapa (timing)').item.json.lead_id }}",
+            "ultima_etapa_pre": "={{ $('Decidir etapa (timing)').item.json.etapa }}",
+            "ultima_etapa_pre_ts": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "a988945c-e213-4b1c-8bf0-94789b443036",
+      "name": "Atualizar etapa (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1580,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Cadencia_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ 'LOG' + $now.format('yyyyMMddHHmmss') }}",
+            "lead_id": "={{ $('Decidir etapa (timing)').item.json.lead_id }}",
+            "evento_id": "={{ $('Decidir etapa (timing)').item.json.evento_id }}",
+            "fase": "PRE",
+            "etapa": "={{ $('Decidir etapa (timing)').item.json.etapa }}",
+            "canal": "email",
+            "assunto": "={{ $('Gerar mensagem (Claude)').item.json.output.assunto }}",
+            "enviado_ts": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "e07e167f-1734-4b82-93c7-0258b1e6a98c",
+      "name": "Log Cadência (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1800,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 5min (teste) / diário (produção)": {
+      "main": [
+        [
+          {
+            "node": "Ler Leads (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Leads (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Decidir etapa (timing)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir etapa (timing)": {
+      "main": [
+        [
+          {
+            "node": "Gerar mensagem (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gerar mensagem (Claude)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Saída": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Gerar mensagem (Claude)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar mensagem (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Enviar E-mail (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar E-mail (Gmail)": {
+      "main": [
+        [
+          {
+            "node": "É E4/E5 + opt-in WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É E4/E5 + opt-in WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Atualizar etapa (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Atualizar etapa (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar etapa (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Log Cadência (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,396 @@
+{
+  "name": "Kha - TCC Vigil - WF4 Agente Reativo",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      },
+      "id": "dfa0f73f-9822-4312-971f-418048aae70a",
+      "name": "WhatsApp recebido (Trigger)",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Normaliza a mensagem recebida do WhatsApp (payload Cloud API).\nconst j=$input.first().json;\nlet phone=\"\", texto=\"\";\ntry{\n  const v=j.messages ? j : (j.body?.entry?.[0]?.changes?.[0]?.value || j.entry?.[0]?.changes?.[0]?.value || {});\n  const msg=(v.messages && v.messages[0]) || (j.messages && j.messages[0]) || {};\n  phone = msg.from || j.from || \"\";\n  texto = msg.text?.body || j.text?.body || j.message || \"\";\n}catch(e){}\nreturn [{json:{phone, texto}}];\n"
+      },
+      "id": "35e52fd6-40fc-46af-8cd1-b314db76c3e8",
+      "name": "Extrair mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "whatsapp",
+              "lookupValue": "={{ $json.phone }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3e63de2-6a44-4c8b-8cc0-df9fc5fa6eed",
+      "name": "Buscar lead (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Extrair mensagem').item.json.texto }}",
+        "options": {
+          "systemMessage": "Você é o assistente virtual do Vigil Summit (evento de cibersegurança da Vigil.AI), atendendo leads por WhatsApp. Seja cordial, profissional, consultivo e conciso (mensagens curtas, adequadas a WhatsApp).\n\nUse TODA a memória disponível deste lead para personalizar:\n- Nome: {{ $('Buscar lead (Sheets)').item.json.nome }}\n- Cargo: {{ $('Buscar lead (Sheets)').item.json.cargo_real || $('Buscar lead (Sheets)').item.json.cargo_informado }}\n- Empresa: {{ $('Buscar lead (Sheets)').item.json.empresa }} | Setor: {{ $('Buscar lead (Sheets)').item.json.setor }}\n- Ângulo de personalização: {{ $('Buscar lead (Sheets)').item.json.angulo_personalizacao }}\n- Status no funil: {{ $('Buscar lead (Sheets)').item.json.status }}\n- Já confirmou presença?: {{ $('Buscar lead (Sheets)').item.json.confirmado }}\n\nContexto do evento: Vigil Summit — Segurança para a Era da IA, 15/10/2026, São Paulo, 09h-18h. Demos ao vivo, priorização de risco por IA, conformidade ISO 27001/LGPD/SOC 2.\n\nDiretrizes:\n- Responda sempre no contexto do evento e do perfil do lead.\n- Se o lead demonstrar intenção de reunião/demo, ofereça o link de agendamento: https://cal.com/vigil-ai/demo\n- Se pedir para sair, confirme educadamente o descadastro.\n- Nunca invente informações que não estejam no perfil ou no contexto do evento.\n- Lembre-se do histórico da conversa (memória) para não se repetir."
+        }
+      },
+      "id": "ee303868-1a08-4e6e-af51-58f0b1134cd7",
+      "name": "Agente Claude (memória)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        920,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-sonnet-4.6",
+        "options": {}
+      },
+      "id": "39cf5403-fe22-4b96-9fa4-2c3670d157cb",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        880,
+        440
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "pRbx2i2kMURtBSCv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extrair mensagem').item.json.phone }}",
+        "contextWindowLength": 15
+      },
+      "id": "e73b358b-cb9e-4562-9067-f3a18dcbbaa9",
+      "name": "Memória da conversa",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1060,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "SEU_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Extrair mensagem').item.json.phone }}",
+        "textBody": "={{ $json.output }}",
+        "additionalFields": {}
+      },
+      "id": "242b13d5-b039-42b7-9c0c-157e5ccfa0bb",
+      "name": "Responder WhatsApp",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Detecta intenção simples por palavra-chave (opt-out / confirmação).\nconst t=($json.texto||\"\").toLowerCase();\nlet intent=\"conversa\";\nif(/\\b(sair|parar|pare|descadastrar|remover|stop|cancelar)\\b/.test(t)) intent=\"opt_out\";\nelse if(/\\b(confirmo|confirmado|confirmar|vou|estarei|presença|presenca|sim,? vou)\\b/.test(t)) intent=\"confirmar\";\nreturn [{json:{...$json, intent}}];\n"
+      },
+      "id": "472ce164-0594-41b3-a8f3-7d2915daca0b",
+      "name": "Detectar intenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "opt_out",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "opt_out"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "confirmar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "confirmar"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ad13ced4-3054-4437-8a79-57a75efbadd5",
+      "name": "Rotear intenção",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1120,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "value": {
+            "lead_id": "={{ $('Buscar lead (Sheets)').item.json.lead_id }}",
+            "opt_out": "TRUE"
+          }
+        },
+        "options": {}
+      },
+      "id": "9d13d656-656a-446c-826d-cdc10187b3b0",
+      "name": "Marcar opt_out (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1360,
+        500
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZTPGPkVHa0pR-EWEgvsrCZByiF4bo3Jr6iwDcXIZIrU/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "value": {
+            "lead_id": "={{ $('Buscar lead (Sheets)').item.json.lead_id }}",
+            "status": "CONFIRMADO",
+            "confirmado": "TRUE",
+            "confirmado_ts": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "4a90bf7d-d0b4-495b-922c-4512d59a3a37",
+      "name": "Marcar confirmado (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1360,
+        640
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9etF2WyKhkDu9Msx",
+          "name": "marketing004"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp recebido (Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Extrair mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair mensagem": {
+      "main": [
+        [
+          {
+            "node": "Buscar lead (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar lead (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Agente Claude (memória)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Detectar intenção",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Claude (memória)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memória da conversa": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente Claude (memória)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Claude (memória)": {
+      "main": [
+        [
+          {
+            "node": "Responder WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar intenção": {
+      "main": [
+        [
+          {
+            "node": "Rotear intenção",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear intenção": {
+      "main": [
+        [
+          {
+            "node": "Marcar opt_out (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar confirmado (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
